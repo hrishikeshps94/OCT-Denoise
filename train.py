@@ -56,6 +56,7 @@ class Train():
         self.dataset_generator()
         self.model_intialisation()
         self.optimiser_loss_intialiser()
+        self.best_psnr = 0
 
     def model_intialisation(self):
         model = UNet(in_channels=self.opt.n_channel,
@@ -202,7 +203,9 @@ class Train():
     def run(self):
         for self.epoch in range(self.opt.n_epochs):
             self.train_one_epoch()
-            self.validate_one_epoch()
+            avg_psnr_dn,avg_psnr_exp,avg_psnr_mid = self.validate_one_epoch()
+            if avg_psnr_dn>self.best_psnr:
+                torch.save('best.pth',self.model.state_dict())
 
 trainer = Train(opt)
 trainer.run()
