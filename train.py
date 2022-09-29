@@ -56,7 +56,10 @@ class Train():
         self.dataset_generator()
         self.model_intialisation()
         self.optimiser_loss_intialiser()
-        self.best_psnr = 0
+        self.best_psnr_dn = 0
+        self.best_psnr_exp = 0
+        self.best_psnr_mid = 0
+
 
     def model_intialisation(self):
         model = UNet(in_channels=self.opt.n_channel,
@@ -64,6 +67,7 @@ class Train():
                 wf=self.opt.n_feature)
         self.masker = Masker(width=4, mode='interpolate', mask_type='all')
         self.model = model.to(device)
+        # self.model.load_state_dict(torch.load('best.path'))
     def optimiser_loss_intialiser(self):
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.opt.lr,
                        weight_decay=self.opt.w_decay)
@@ -113,8 +117,8 @@ class Train():
             self.optimizer.step()
             self.lr_scheduler.step()
         print(
-            '{:04d} / {:04d} Loss_Reg={:.6f},  Loss_Rev={:.6f}, Loss_All={:.6f}'
-            .format(self.epoch,self.opt.n_epochs,total_loss_reg/total_iterations, total_loss_rev/total_iterations, total_loss_all/total_iterations))
+            '{:04d} / {:04d} Loss_Reg={:.6f},  Loss_Rev={:.6f}, Loss_All={:.6f},LR = {:0.6f}'
+            .format(self.epoch,self.opt.n_epochs,total_loss_reg/total_iterations, total_loss_rev/total_iterations, total_loss_all/total_iterations,self.optimizer.param_groups[0]['lr']))
     def validate_one_epoch(self):
         avg_psnr_dn = []
         avg_ssim_dn = []
@@ -182,7 +186,7 @@ class Train():
                                             pred255_mid.astype(np.float32))
                 avg_ssim_mid.append(ssim_mid)
         disp_im = np.concatenate([noisy_255,pred255_dn,origin255],axis=1)
-        cv2.imwrite(f'results/{self.epoch}.jpg',cv2.cvtColor(disp_im,cv2.COLOR_RGB2BGR))
+        
 
 
         avg_psnr_dn = np.array(avg_psnr_dn)
@@ -198,14 +202,29 @@ class Train():
         avg_ssim_mid = np.mean(avg_ssim_mid)
         print("epoch:{},dn:{:.6f}/{:.6f},exp:{:.6f}/{:.6f},mid:{:.6f}/{:.6f}\n".format(
                             self.epoch, avg_psnr_dn, avg_ssim_dn, avg_psnr_exp, avg_ssim_exp, avg_psnr_mid, avg_ssim_mid))
-        return avg_psnr_dn,avg_psnr_exp,avg_psnr_mid
+        print("epoch:{},best_dn:{:.6f},best_exp:{:.6f},best_mid:{:.6f}\n".format(self.epoch,self.best_psnr_dn,\
+            self.best_psnr_exp,self.best_psnr_mid))
+        return avg_psnr_dn,avg_psnr_exp,avg_psnr_mid,disp_im
 
     def run(self):
         for self.epoch in range(self.opt.n_epochs):
             self.train_one_epoch()
-            avg_psnr_dn,avg_psnr_exp,avg_psnr_mid = self.validate_one_epoch()
-            if avg_psnr_dn>self.best_psnr:
-                torch.save('best.pth',self.model.state_dict())
+            avg_psnr_dn,avg_psnr_exp,avg_psnr_mid,disp_im = self.validate_one_epoch()
+            save_data = {
+            'step': self.epoch,
+            'best_psnr_dn':self.best_psnr_dn,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'beta':self.beta}
+            if avg_psnr_dn>self.best_psnr_dn:
+                torch.save(save_data,'best.pth')
+                cv2.imwrite(f'Results/{self.epoch}.jpg',cv2.cvtColor(disp_im,cv2.COLOR_RGB2BGR))
+                self.best_psnr_dn = avg_psnr_dn
+            if avg_psnr_exp>self.best_psnr_exp:
+                self.best_psnr_exp = avg_psnr_exp
+            if avg_psnr_mid>self.best_psnr_mid:
+                self.best_psnr_mid = avg_psnr_mid
+
 
 trainer = Train(opt)
 trainer.run()
